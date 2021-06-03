@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: No License
-pragma solidity ^0.5.16;
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract SoccerBetting {
     // settings
-    address payable public owner = msg.sender;
+    address payable public owner = payable(msg.sender);
     uint8 public constant FEE_PERCENTAGE = 3;
     bool public open = true;
     bool public finished = false;
@@ -48,7 +50,7 @@ contract SoccerBetting {
         string memory _homeTeam,
         string memory _awayTeam,
         string memory _date
-    ) public {
+    ) {
         homeTeam = _homeTeam;
         awayTeam = _awayTeam;
         date = _date;
@@ -61,7 +63,7 @@ contract SoccerBetting {
     function addBet(uint8 _option) external payable exceptOwner onlyOpen {
         require(_option >= 0 && _option <= 2, "Invalid bet option");
         if (bets[_option][msg.sender] == 0) {
-            bettors[_option].push(msg.sender);
+            bettors[_option].push(payable(msg.sender));
         }
         bets[_option][msg.sender] += msg.value;
         betsTotal[_option] += msg.value;
