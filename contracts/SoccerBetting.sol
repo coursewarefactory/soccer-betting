@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: No License
-pragma solidity ^0.8.0;
+pragma solidity 0.6.4;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import './IBEP20.sol';
 
 contract SoccerBetting {
     // settings
     address payable public owner = payable(msg.sender);
+    IBEP20 public token;
     uint8 public constant FEE_PERCENTAGE = 3;
     bool public open = true;
     bool public finished = false;
@@ -20,6 +21,7 @@ contract SoccerBetting {
     address payable[][3] public bettors;
     mapping(address => uint256)[3] public bets;
     uint256[3] public betsTotal;
+    uint256 public betsTotalTotal;
 
     modifier onlyOwner {
         require(msg.sender == owner, "Only owner can call this function");
@@ -50,23 +52,30 @@ contract SoccerBetting {
         string memory _homeTeam,
         string memory _awayTeam,
         string memory _date
-    ) {
+    ) public {
         homeTeam = _homeTeam;
         awayTeam = _awayTeam;
         date = _date;
+    }
+
+    function setToken(IBEP20 _token) external onlyOwner onlyOpen {
+        token = _token;
     }
 
     /**
      * @notice Add a bet
      * @param _option 0 = home, 1 = away, 2 = tie
      */
-    function addBet(uint8 _option) external payable exceptOwner onlyOpen {
+    function addBet(uint8 _option, uint256 _amount) external exceptOwner onlyOpen {
         require(_option >= 0 && _option <= 2, "Invalid bet option");
+        require(token.balanceOf(msg.sender) >= _amount, "nao tem dinheiro");
         if (bets[_option][msg.sender] == 0) {
             bettors[_option].push(payable(msg.sender));
         }
-        bets[_option][msg.sender] += msg.value;
-        betsTotal[_option] += msg.value;
+        token.transferFrom(msg.sender, address(this), _amount);
+        bets[_option][msg.sender] += _amount;
+        betsTotal[_option] += _amount;
+        betsTotalTotal += _amount;
     }
 
     /**
@@ -85,15 +94,16 @@ contract SoccerBetting {
         finished = true;
         result = _result;
         address payable[] memory winners = bettors[_result];
-        uint256 jackpot = address(this).balance;
+        uint256 jackpot = token.balanceOf(address(this));
         jackpot = (jackpot * (100 - FEE_PERCENTAGE)) / 100;
         for (uint256 i = 0; i < winners.length; i++) {
             uint256 betAmount = bets[_result][winners[i]];
             uint256 betAmountPct = (100 * betAmount) / betsTotal[_result];
             uint256 individualPrize = (jackpot * betAmountPct) / 100;
-            winners[i].transfer(individualPrize);
+            token.transferFrom(address(this), winners[i], individualPrize);
         }
-        owner.transfer(address(this).balance);
+        uint256 rest = token.balanceOf(address(this));
+        token.transferFrom(address(this), owner, rest);
     }
 
     /**
