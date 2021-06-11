@@ -13,12 +13,12 @@ contract TestToken is IBEP20 {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     constructor() public {
-        _totalSupply = 0;
-        _decimals = 18;
-        _symbol = 'TEST';
         _name = 'TestToken';
+        _symbol = 'TEST';
+        _totalSupply = 1000000 + 10 ** 18;
+        _decimals = 18;
         _owner = msg.sender;
-        _mint(_owner, 1000000000000000000000000);
+        _balances[_owner] = _totalSupply;
     }
 
     function totalSupply() external override view returns (uint256) {
@@ -46,7 +46,9 @@ contract TestToken is IBEP20 {
     }
 
     function transfer(address recipient, uint256 amount) external override returns (bool) {
-        _transfer(msg.sender, recipient, amount);
+        _balances[msg.sender] = _balances[msg.sender] - amount;
+        _balances[recipient] = _balances[recipient] + amount;
+        emit Transfer(msg.sender, recipient, amount);
         return true;
     }
 
@@ -55,36 +57,16 @@ contract TestToken is IBEP20 {
     }
 
     function approve(address spender, uint256 amount) external override returns (bool) {
-        _approve(msg.sender, spender, amount);
+        _allowances[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
         return true;
     }
 
     function transferFrom(address sender, address recipient, uint256 amount) external override returns (bool) {
-        _transfer(sender, recipient, amount);
-        return true;
-    }
-
-    // ...
-
-    function _mint(address account, uint256 amount) internal {
-        require(account != address(0), 'BEP20: mint to the zero address');
-        _totalSupply += amount;
-        _balances[account] += amount;
-        emit Transfer(address(0), account, amount);
-    }
-
-    function _approve(address owner, address spender, uint256 amount) internal {
-        require(owner != address(0), 'BEP20: approve from the zero address');
-        require(spender != address(0), 'BEP20: approve to the zero address');
-        _allowances[owner][spender] = amount;
-        emit Approval(owner, spender, amount);
-    }
-
-    function _transfer(address sender, address recipient, uint256 amount) internal {
-        require(sender != address(0), 'BEP20: transfer from the zero address');
-        require(recipient != address(0), 'BEP20: transfer to the zero address');
-        _balances[sender] -= amount;
-        _balances[recipient] += amount;
+        _balances[sender] = _balances[sender] - amount;
+        _allowances[sender][msg.sender] = _allowances[sender][msg.sender] - amount;
+        _balances[recipient] = _balances[recipient] + amount;
         emit Transfer(sender, recipient, amount);
+        return true;
     }
 }
