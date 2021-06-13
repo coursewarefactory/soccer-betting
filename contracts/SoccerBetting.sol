@@ -51,14 +51,12 @@ contract SoccerBetting {
     constructor(
         string memory _homeTeam,
         string memory _awayTeam,
-        string memory _date
+        string memory _date,
+        IBEP20 _token
     ) public {
         homeTeam = _homeTeam;
         awayTeam = _awayTeam;
         date = _date;
-    }
-
-    function setToken(IBEP20 _token) external onlyOwner onlyOpen {
         token = _token;
     }
 

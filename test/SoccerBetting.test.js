@@ -22,10 +22,9 @@ contract("SoccerBetting", accounts => {
   let account5BalanceAfterBet;
 
   before(async () => {
-    contract = await SoccerBetting.deployed();
-    token = await TestToken.deployed();
+    token = await TestToken.new();
+    contract = await SoccerBetting.new('FLA', 'FLU', '2021-10-30', token.address);
     const accountsInitialTokenQuantity = 100;
-    await contract.setToken(token.address);
     await token.transfer(account1, parseTokenQuantity(accountsInitialTokenQuantity), {from: accountOwner});
     await token.transfer(account2, parseTokenQuantity(accountsInitialTokenQuantity), {from: accountOwner});
     await token.transfer(account3, parseTokenQuantity(accountsInitialTokenQuantity), {from: accountOwner});
