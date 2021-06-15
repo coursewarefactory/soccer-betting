@@ -15,7 +15,7 @@ contract TestToken is IBEP20 {
     constructor() public {
         _name = 'TestToken';
         _symbol = 'TEST';
-        _totalSupply = 1000000 + 10 ** 18;
+        _totalSupply = 1000000 * 10 ** 18;
         _decimals = 18;
         _owner = msg.sender;
         _balances[_owner] = _totalSupply;

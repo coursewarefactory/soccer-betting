@@ -72,8 +72,8 @@ contract SoccerBetting {
         }
         token.approve(msg.sender, _amount);
         token.transferFrom(msg.sender, address(this), _amount);
-        bets[_option][msg.sender] += _amount;
-        betsTotal[_option] += _amount;
+        bets[_option][msg.sender] = add(bets[_option][msg.sender], _amount);
+        betsTotal[_option] = add(betsTotal[_option], _amount);
         betsTotalTotal += _amount;
     }
 
@@ -110,5 +110,41 @@ contract SoccerBetting {
      */
     function getResult() external view onlyFinished returns (uint8) {
         return result;
+    }
+
+    // SafeMath
+
+    /**
+     * @dev Returns the addition of two unsigned integers, reverting on
+     * overflow.
+     *
+     * Counterpart to Solidity's `+` operator.
+     *
+     * Requirements:
+     *
+     * - Addition cannot overflow.
+     */
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, "SafeMath: addition overflow");
+
+        return c;
+    }
+
+    /**
+     * @dev Returns the integer division of two unsigned integers, reverting on
+     * division by zero. The result is rounded towards zero.
+     *
+     * Counterpart to Solidity's `/` operator. Note: this function uses a
+     * `revert` opcode (which leaves remaining gas untouched) while Solidity
+     * uses an invalid opcode to revert (consuming all remaining gas).
+     *
+     * Requirements:
+     *
+     * - The divisor cannot be zero.
+     */
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b > 0, "SafeMath: division by zero");
+        return a / b;
     }
 }

@@ -20,7 +20,7 @@
     "url": "https://github.com/toreti/soccer-betting/issues"
   },
   "homepage": "https://github.com/toreti/soccer-betting#readme",
-  "dependencies": {
-    "@openzeppelin/contracts": "^4.1.0"
+  "devDependencies": {
+    "@openzeppelin/contracts": "^3.3.0"
   }
 }
