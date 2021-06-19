@@ -7,7 +7,7 @@ contract("SoccerBetting", accounts => {
   const tryCatchRevert = require("./exceptions.js").tryCatchRevert;
   const parseTokenQuantityToInt = quantity => quantity * 10 ** 18;
   const parseTokenQuantity = quantity => parseTokenQuantityToInt(quantity).toString();
-  const balanceOf = async address => web3.utils.BN(await token.balanceOf(address)).toString();
+  const balanceOf = async address => web3.utils.BN(await token.balanceOf.call(address)).toString();
   const assertBalance = async (address, balance, error) => assert.equal(await balanceOf(address), parseTokenQuantityToInt(balance), error);
 
   // accounts for test
@@ -19,8 +19,15 @@ contract("SoccerBetting", accounts => {
   const account5 = accounts[5];
   const account6 = accounts[6];
 
+  // game data
+  const teamA = "FLA";
+  const teamB = "FLU";
+  const date = "2021-01-30";
+
+  // ...
   let contract;
   let token;
+  let gameHash;
   let account1BalanceAfterBet;
   let account2BalanceAfterBet;
   let account3BalanceAfterBet;
@@ -31,10 +38,10 @@ contract("SoccerBetting", accounts => {
     // create a token for tests
     token = await TestToken.new();
     assert.equal(await token.getOwner(), accountOwner, "Token owner is wrong");
-    assertBalance(accountOwner, 1000000, "Balance of token owner is wrong");
+    assertBalance(accountOwner, 1000000, "Token owner balance is wrong");
 
     // deploy the contract
-    contract = await SoccerBetting.new("FLA", "FLU", "2021-10-30", token.address);
+    contract = await SoccerBetting.new();
     assert.equal(await contract.owner(), accountOwner, "Contract owner is wrong");
     assertBalance(contract.address, 0, "Contract balance should be 0 on create");
 
@@ -54,32 +61,49 @@ contract("SoccerBetting", accounts => {
   });
 
   describe("Test the contract end to end", async () => {
-    it("should start open", async () => {
-      assert.isOk(await contract.open(), "The contract should start open");
+    it("Anyone can generate a game hash", async () => {
+      assert.isOk(
+        await contract.generateGameHash.call("FLA", "FLU", "2021-01-30", token.address, {from: accountOwner}),
+        "The owner can generate a game hash"
+      );
+      assert.isOk(
+        await contract.generateGameHash.call("FLA", "FLU", "2021-01-30", token.address, {from: account1}),
+        "An account can generate a game hash"
+      );
     });
 
-    it("should start with balance equals 0", async () => {
-      assertBalance(contract.address, 0, "The contract should start with balance equals 0");
+    it("Only the owner can add a game", async () => {
+      gameHash = await contract.generateGameHash.call(teamA, teamB, date, token.address, {from: accountOwner});
+      await contract.addGame(teamA, teamB, date, token.address, {from: accountOwner});
     });
 
-    it("can't receive bets from contract owner", async () => {
-      await tryCatchRevert(contract.addBet(0, parseTokenQuantity(1), {from: accountOwner}), "Owner can't call this function");
+    it("Should start open for bets", async () => {
+      assert.isOk(await contract.isOpen.call(gameHash, {from: accountOwner}), "The contract should start open");
+      assert.isOk(await contract.isOpen.call(gameHash, {from: account1}), "The contract should start open");
     });
 
-    it("can receive bets from other accounts", async () => {
-      await contract.addBet(0, parseTokenQuantity(1), {from: account1});
-      await contract.addBet(0, parseTokenQuantity(2), {from: account1});
-      await contract.addBet(1, parseTokenQuantity(2), {from: account2});
-      await contract.addBet(2, parseTokenQuantity(9), {from: account3});
-      await contract.addBet(0, parseTokenQuantity(6), {from: account4});
-      await contract.addBet(0, parseTokenQuantity(1), {from: account5});
+    it("Should start with balance equals 0", async () => {
+      await assertBalance(contract.address, 0, "The contract should start with balance equals 0");
+    });
 
-      assertBalance(account1, 97, "Account 1 balance is wrong");
-      assertBalance(account2, 98, "Account 2 balance is wrong");
-      assertBalance(account3, 91, "Account 3 balance is wrong");
-      assertBalance(account4, 94, "Account 4 balance is wrong");
-      assertBalance(account5, 99, "Account 5 balance is wrong");
-      assertBalance(contract.address, 21, "Contract's balance is wrong");
+    it("Can't receive bets from contract owner", async () => {
+      await tryCatchRevert(contract.addBet(gameHash, 0, parseTokenQuantity(1), {from: accountOwner}), "Owner can't call this function");
+    });
+
+    it("Can receive bets from other accounts", async () => {
+      await contract.addBet(gameHash, 0, parseTokenQuantity(1), {from: account1});
+      await contract.addBet(gameHash, 0, parseTokenQuantity(2), {from: account1});
+      await contract.addBet(gameHash, 1, parseTokenQuantity(2), {from: account2});
+      await contract.addBet(gameHash, 2, parseTokenQuantity(9), {from: account3});
+      await contract.addBet(gameHash, 0, parseTokenQuantity(6), {from: account4});
+      await contract.addBet(gameHash, 0, parseTokenQuantity(1), {from: account5});
+
+      await assertBalance(account1, 97, "Account 1 balance is wrong");
+      await assertBalance(account2, 98, "Account 2 balance is wrong");
+      await assertBalance(account3, 91, "Account 3 balance is wrong");
+      await assertBalance(account4, 94, "Account 4 balance is wrong");
+      await assertBalance(account5, 99, "Account 5 balance is wrong");
+      await assertBalance(contract.address, 21, "Contract's balance is wrong");
 
       account1BalanceAfterBet = await balanceOf(account1);
       account2BalanceAfterBet = await balanceOf(account2);
@@ -88,38 +112,54 @@ contract("SoccerBetting", accounts => {
       account5BalanceAfterBet = await balanceOf(account5);
     });
 
-    it("should thrown an error when pass invalid bet option", async () => {
-      await tryCatchRevert(contract.addBet(3, parseTokenQuantity(1), {from: account6}), "Invalid bet option");
+    it("Should thrown an error when pass invalid bet option", async () => {
+      await tryCatchRevert(contract.addBet(gameHash, 3, parseTokenQuantity(1), {from: account6}), "Invalid bet option");
     });
 
-    it("should thrown an error when a normal account try to close bets", async () => {
-      await tryCatchRevert(contract.closeBets({from: account6}), "Only owner can call this function");
+    it("Should thrown an error when a normal account try to close bets", async () => {
+      await tryCatchRevert(contract.closeBets(gameHash, {from: account6}), "Only owner can call this function");
     });
 
-    it("the owner should close bets", async () => {
-      await contract.closeBets({from: accountOwner});
-      assert.isNotOk(await contract.open(), "The contract should be closed");
+    it("Anyone can detail a game", async () => {
+      assert.deepEqual(
+        await contract.getGame.call(gameHash, {from: accountOwner}),
+        await contract.getGame.call(gameHash, {from: account1})
+      );
+      const game = await contract.getGame.call(gameHash);
+      assert.equal(game[0], teamA);
+      assert.equal(game[1], teamB);
+      assert.equal(game[2], date);
+      assert.equal(game[3], token.address);
     });
 
-    it("should thrown an error when an account try to bet when the contract is closed", async () => {
-      await tryCatchRevert(contract.addBet(1, parseTokenQuantity(1), {from: account6}), "The contract isn't open to bets");
+    it("The owner should close bets", async () => {
+      await contract.closeBets(gameHash, {from: accountOwner});
+      assert.isNotOk(await contract.isOpen.call(gameHash, {from: accountOwner}), "The contract should be closed");
     });
 
-    it("should thrown an error when a normal account try to finish the contract", async () => {
-      await tryCatchRevert(contract.setResult(1, {from: account6}), "Only owner can call this function");
+    it("Should thrown an error when an account try to bet when the contract is closed", async () => {
+      await tryCatchRevert(contract.addBet(gameHash, 1, parseTokenQuantity(1), {from: account6}), "The contract isn't open to bets");
     });
 
-    it("the result can be displayed only when the match is finished", async () => {
-      await tryCatchRevert(contract.getResult({from: account6}), "The contract isn't finished");
+    it("Should thrown an error when a normal account try to finish the contract", async () => {
+      await tryCatchRevert(contract.setResult(gameHash, 1, {from: account6}), "Only owner can call this function");
     });
 
-    it("the owner should finish bets", async () => {
+    it("The result can be displayed only when the match is finished", async () => {
+      await tryCatchRevert(contract.getResult(gameHash, {from: account6}), "The contract isn't finished");
+    });
+
+    it("The owner should finish bets", async () => {
       const result = 0;
-      await contract.setResult(result, {from: accountOwner});
-      assertBalance(contract.address, 0, "The contract balance should finish with balance equals 0");
+      await contract.setResult(gameHash, result, {from: accountOwner});
+      assert.equal(await contract.getResult.call(gameHash), result, "The result is wrong");
     });
 
-    it("distributes the jackpot to the winners", async () => {
+    it("The balance of the contract should be 0 after finish", async () => {
+      await assertBalance(contract.address, 0, "The contract balance should finish with balance equals 0");
+    });
+
+    it("Distributes the jackpot to the winners", async () => {
       // contract balance = 21
       // jackpot = 20.37 (97% of 21)
       const expected1 = parseInt(account1BalanceAfterBet) + parseTokenQuantityToInt(6.111);// 30% of 20.37
@@ -130,19 +170,19 @@ contract("SoccerBetting", accounts => {
       assert.equal(await balanceOf(account5), expected5.toString(), "The account5 balance is wrong");
     });
 
-    it("not distributes the jackpot to the losers", async () => {
+    it("Not distributes the jackpot to the losers", async () => {
       assert.equal(await balanceOf(account2), account2BalanceAfterBet, "The account2 balance is wrong");
       assert.equal(await balanceOf(account3), account3BalanceAfterBet, "The account3 balance is wrong");
     });
 
-    it("the result can be displayed when the match is finished", async () => {
+    it("The result can be displayed when the match is finished", async () => {
       const expected = 0;
-      const returned = await contract.getResult({from: account1});
+      const returned = await contract.getResult.call(gameHash, {from: account1});
       assert.equal(expected, returned, "The contract should display the result")
     });
 
-    it("should thrown an error when an account try to bet when the contract is finished", async () => {
-      await tryCatchRevert(contract.addBet(1, parseTokenQuantity(1), {from: account6}), "The contract isn't open to bets");
+    it("Should thrown an error when an account try to bet when the contract is finished", async () => {
+      await tryCatchRevert(contract.addBet(gameHash, 1, parseTokenQuantity(1), {from: account6}), "The contract isn't open to bets");
     });
   });
 });

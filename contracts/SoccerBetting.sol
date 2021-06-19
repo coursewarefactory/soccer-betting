@@ -6,22 +6,25 @@ import './IBEP20.sol';
 contract SoccerBetting {
     // settings
     address public owner = msg.sender;
-    IBEP20 public token;
     uint8 public constant FEE_PERCENTAGE = 3;
-    bool public open = true;
-    bool public finished = false;
 
-    // match
-    string public homeTeam;
-    string public awayTeam;
-    string public date;
-    uint8 private result;
+    // games
+    struct Game {
+        string teamA;
+        string teamB;
+        string date;
+        IBEP20 token;
+        bool open;
+        bool finished;
+        uint8 result;// 0: teamA, 1: teamB, 2: tie
+    }
+    mapping(bytes32 => Game) private games;
 
     // bettors and bets
-    address[][3] public bettors;
-    mapping(address => uint256)[3] public bets;
-    uint256[3] public betsTotal;
-    uint256 public betsTotalTotal;
+    mapping(bytes32 => address[][3]) public bettors;
+    mapping(bytes32 => mapping(address => uint256)[3]) public bets;
+    mapping(bytes32 => uint256[3]) public betsTotal;
+    mapping(bytes32 => uint256) public betsTotalTotal;
 
     modifier onlyOwner {
         require(msg.sender == owner, "Only owner can call this function");
@@ -33,83 +36,108 @@ contract SoccerBetting {
         _;
     }
 
-    modifier onlyOpen {
-        require(open, "The contract isn't open to bets");
-        _;
+    /**
+     * @notice Generate a unique identifier for the game
+     */
+    function generateGameHash(
+        string memory teamA,
+        string memory teamB,
+        string memory date,
+        IBEP20 token
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(teamA, teamB, date, token));
     }
 
-    modifier onlyClosed {
-        require(!open, "The contract isn't open");
-        _;
+    /**
+     * @notice Add a game to take bets
+     * @dev It's necessary pass the game params to generate the hash and in the same time
+     * save data about the match
+     */
+    function addGame(
+        string calldata teamA,
+        string calldata teamB,
+        string calldata date,
+        IBEP20 token
+    ) external onlyOwner {
+        bytes32 hash = generateGameHash(teamA, teamB, date, token);
+        games[hash] = Game(teamA, teamB, date, token, true, false, 0);
     }
 
-    modifier onlyFinished {
-        require(finished, "The contract isn't finished");
-        _;
+    /**
+     * @notice Return the game data
+     */
+    function getGame(bytes32 hash) public view returns (string memory, string memory, string memory, IBEP20) {
+        Game memory game = games[hash];
+        return (game.teamA, game.teamB, game.date, game.token);
     }
 
-    constructor(
-        string memory _homeTeam,
-        string memory _awayTeam,
-        string memory _date,
-        IBEP20 _token
-    ) public {
-        homeTeam = _homeTeam;
-        awayTeam = _awayTeam;
-        date = _date;
-        token = _token;
+    /**
+     * @notice Verify if the game is open for bets
+     */
+    function isOpen(bytes32 hash) public view returns (bool) {
+        return games[hash].open;
+    }
+
+    /**
+     * @notice Verify if the game is finished
+     */
+    function isFinished(bytes32 hash) public view returns (bool) {
+        return games[hash].finished;
     }
 
     /**
      * @notice Add a bet
-     * @param _option 0 = home, 1 = away, 2 = tie
      */
-    function addBet(uint8 _option, uint256 _amount) external exceptOwner onlyOpen {
-        require(_option >= 0 && _option <= 2, "Invalid bet option");
-        require(token.balanceOf(msg.sender) >= _amount, "Balance isn't enough");
-        if (bets[_option][msg.sender] == 0) {
-            bettors[_option].push(msg.sender);
+    function addBet(bytes32 hash, uint8 option, uint256 amount) external exceptOwner {
+        require(option >= 0 && option <= 2, "Invalid bet option");
+        require(isOpen(hash), "The contract isn't open to bets");
+        IBEP20 token = games[hash].token;
+        require(token.balanceOf(msg.sender) >= amount, "Balance isn't enough");
+        if (bets[hash][option][msg.sender] == 0) {
+            bettors[hash][option].push(msg.sender);
         }
-        token.approve(msg.sender, _amount);
-        token.transferFrom(msg.sender, address(this), _amount);
-        bets[_option][msg.sender] = add(bets[_option][msg.sender], _amount);
-        betsTotal[_option] = add(betsTotal[_option], _amount);
-        betsTotalTotal += _amount;
+        token.approve(msg.sender, amount);
+        token.transferFrom(msg.sender, address(this), amount);
+        bets[hash][option][msg.sender] = add(bets[hash][option][msg.sender], amount);
+        betsTotal[hash][option] = add(betsTotal[hash][option], amount);
+        betsTotalTotal[hash] += amount;
     }
 
     /**
      * @notice Close the bets
      */
-    function closeBets() external onlyOwner onlyOpen {
-        open = false;
+    function closeBets(bytes32 hash) external onlyOwner {
+        games[hash].open = false;
     }
 
     /**
-     * @notice Save the result of the match and distributes the jackpot
-     * @param _result the result of the match
+     * @notice Save the result of the game and distributes the jackpot
      */
-    function setResult(uint8 _result) external onlyOwner onlyClosed {
-        require(_result >= 0 && _result <= 2, "Invalid result");
-        finished = true;
-        result = _result;
-        address[] memory winners = bettors[_result];
-        uint256 jackpot = token.balanceOf(address(this));
+    function setResult(bytes32 hash, uint8 result) external onlyOwner {
+        require(result >= 0 && result <= 2, "Invalid result");
+        games[hash].finished = true;
+        games[hash].result = result;
+        IBEP20 token = games[hash].token;
+        address[] memory winners = bettors[hash][result];
+        uint256 jackpot = betsTotalTotal[hash];
+        uint256 rest = jackpot;
         jackpot = (jackpot * (100 - FEE_PERCENTAGE)) / 100;
         for (uint256 i = 0; i < winners.length; i++) {
-            uint256 betAmount = bets[_result][winners[i]];
-            uint256 betAmountPct = (100 * betAmount) / betsTotal[_result];
+            uint256 betAmount = bets[hash][result][winners[i]];
+            uint256 betAmountPct = (100 * betAmount) / betsTotal[hash][result];
             uint256 individualPrize = (jackpot * betAmountPct) / 100;
             token.transfer(winners[i], individualPrize);
+            rest -= individualPrize;
         }
-        uint256 rest = token.balanceOf(address(this));
         token.transfer(owner, rest);
     }
 
     /**
      * @return the result of the match
      */
-    function getResult() external view onlyFinished returns (uint8) {
-        return result;
+    function getResult(bytes32 hash) external view returns (uint8) {
+        require(isFinished(hash), "The contract isn't finished");
+        return games[hash].result;
     }
 
     // SafeMath
